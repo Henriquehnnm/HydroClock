@@ -2,6 +2,7 @@ import curses
 import sqlite3
 import os
 
+# HydroToDo Beta
 # Caracteres para borda arredondada
 TL = '╭'
 TR = '╮'
