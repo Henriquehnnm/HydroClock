@@ -159,25 +159,39 @@ def main(stdscr):
 
         # Verificação de resolução mínima
         min_width = 80
-        min_height = 30
+        min_height = 24
         if width < min_width or height < min_height:
             msg = f"Resolução atual: {width}x{height} | Mínima: {min_width}x{min_height}"
             stdscr.clear()
-            stdscr.addstr(height // 2, max(0, (width - len(msg)) // 2), msg, curses.color_pair(2) | curses.A_BOLD)
+            msg_x = max(0, min(width - 1, (width - len(msg)) // 2))
+            msg_y = min(height - 1, height // 2)
+            try:
+                stdscr.addstr(msg_y, msg_x, msg[:max(0, width - msg_x)], curses.color_pair(2) | curses.A_BOLD)
+            except curses.error:
+                pass  # ignora se a tela for tão pequena que nem dá pra desenhar
             stdscr.refresh()
             key = stdscr.getch()
             if key in (ord('q'), 3):  # 'q', Ctrl+C
                 break
             continue
 
+
         # Caixa do título
         title_box_w = max(len(line) for line in ASCII_TITLE) + 4
         title_box_h = len(ASCII_TITLE) + 2
-        title_box_x = (width - title_box_w) // 2
+        # Garante que o box não ultrapasse os limites da tela
+        if title_box_w > width:
+            title_box_w = width - 2 if width > 2 else width
+        if title_box_h > height:
+            title_box_h = height - 2 if height > 2 else height
+        title_box_x = max(0, (width - title_box_w) // 2)
         title_box_y = 1
-        draw_rounded_box(stdscr, title_box_y, title_box_x, title_box_h, title_box_w)
-        for i, line in enumerate(ASCII_TITLE):
-            stdscr.addstr(title_box_y + 1 + i, title_box_x + 2, line, curses.color_pair(3) | curses.A_BOLD)
+        # Só desenha se couber na tela
+        if title_box_y + title_box_h < height and title_box_x + title_box_w < width:
+            draw_rounded_box(stdscr, title_box_y, title_box_x, title_box_h, title_box_w)
+            for i, line in enumerate(ASCII_TITLE):
+                if i + 1 + title_box_y < height and title_box_x + 2 < width:
+                    stdscr.addstr(title_box_y + 1 + i, title_box_x + 2, line[:max(0, width - title_box_x - 4)], curses.color_pair(3) | curses.A_BOLD)
 
         if show_help:
             # Tela de ajuda centralizada, mas um pouco mais para baixo
