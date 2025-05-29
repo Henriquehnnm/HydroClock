@@ -30,25 +30,33 @@ def init_db():
     c.execute('''CREATE TABLE IF NOT EXISTS todos (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     text TEXT NOT NULL,
-                    done INTEGER NOT NULL DEFAULT 0
+                    done INTEGER NOT NULL DEFAULT 0,
+                    category TEXT NOT NULL DEFAULT 'Geral'
                 )''')
+    c.execute('''CREATE TABLE IF NOT EXISTS deleted_categories (
+                    name TEXT PRIMARY KEY
+                )''')
+    c.execute("PRAGMA table_info(todos)")
+    columns = [row[1] for row in c.fetchall()]
+    if 'category' not in columns:
+        c.execute("ALTER TABLE todos ADD COLUMN category TEXT NOT NULL DEFAULT 'Geral'")
     conn.commit()
     conn.close()
 
 
-def load_todos():
+def load_todos(category='Geral'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('SELECT id, text, done FROM todos')
+    c.execute('SELECT id, text, done FROM todos WHERE category = ?', (category,))
     todos = [{'id': row[0], 'text': row[1], 'done': bool(row[2])} for row in c.fetchall()]
     conn.close()
     return todos
 
 
-def add_todo(text):
+def add_todo(text, category='Geral'):
     conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    c.execute('INSERT INTO todos (text, done) VALUES (?, 0)', (text,))
+    c.execute('INSERT INTO todos (text, done, category) VALUES (?, 0, ?)', (text, category))
     conn.commit()
     conn.close()
 
@@ -69,12 +77,48 @@ def delete_todo(todo_id):
     conn.close()
 
 
+def add_deleted_category(cat):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('INSERT OR IGNORE INTO deleted_categories (name) VALUES (?)', (cat,))
+    conn.commit()
+    conn.close()
+
+
+def remove_deleted_category(cat):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM deleted_categories WHERE name = ?', (cat,))
+    conn.commit()
+    conn.close()
+
+
+def delete_todos_by_category(category):
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('DELETE FROM todos WHERE category = ?', (category,))
+    conn.commit()
+    conn.close()
+
+
 def draw_rounded_box(win, y, x, h, w):
     win.addstr(y, x, TL + H * (w - 2) + TR)
     for i in range(1, h - 1):
         win.addstr(y + i, x, V)
         win.addstr(y + i, x + w - 1, V)
     win.addstr(y + h - 1, x, BL + H * (w - 2) + BR)
+
+
+def get_all_categories():
+    conn = sqlite3.connect(DB_PATH)
+    c = conn.cursor()
+    c.execute('SELECT DISTINCT category FROM todos')
+    cats = [row[0] for row in c.fetchall()]
+    c.execute('SELECT name FROM deleted_categories')
+    deleted = set(row[0] for row in c.fetchall())
+    conn.close()
+    filtered = [cat for cat in cats if cat not in deleted]
+    return filtered if filtered else ['Geral']
 
 
 def main(stdscr):
@@ -88,10 +132,11 @@ def main(stdscr):
 
     init_db()
     # Estrutura para abas
-    tabs = [load_todos()]  # tabs[tab_idx] = lista de todos
+    tab_categories = get_all_categories()
+    tabs = [load_todos(cat) for cat in tab_categories]
     current_tab = 0
     max_tabs = 10
-    current_indices = [0]  # current_indices[tab] = índice selecionado
+    current_indices = [0 for _ in tab_categories]
 
     show_help = False
     help_lines = [
@@ -146,11 +191,11 @@ def main(stdscr):
         else:
             # Abas no topo (melhor destaque)
             tab_strs = []
-            for i in range(len(tabs)):
+            for i, cat in enumerate(tab_categories):
                 if i == current_tab:
-                    tab_strs.append(f"╭─[Aba {i+1}]─╮")
+                    tab_strs.append(f"╭─[{cat}]─╮")
                 else:
-                    tab_strs.append(f"  Aba {i+1}  ")
+                    tab_strs.append(f"  {cat}  ")
             tab_bar = " ".join(tab_strs)
             stdscr.addstr(title_box_y + title_box_h, max(0, (width - len(tab_bar)) // 2), tab_bar, curses.color_pair(2) | curses.A_BOLD)
 
@@ -207,11 +252,24 @@ def main(stdscr):
         # Atalhos de abas
         if key == 20:  # Ctrl+T
             if len(tabs) < max_tabs:
-                tabs.append(load_todos())
-                current_indices.append(0)
-                current_tab = len(tabs) - 1
+                curses.echo()
+                prompt = "Nome da nova categoria: "
+                stdscr.addstr(height - 4, 2, " " * (width - 4))
+                stdscr.addstr(height - 4, 2, prompt, curses.A_BOLD)
+                stdscr.refresh()
+                cat = stdscr.getstr(height - 4, 2 + len(prompt), 20).decode().strip()
+                curses.noecho()
+                if cat and cat not in tab_categories:
+                    remove_deleted_category(cat)
+                    tab_categories.append(cat)
+                    tabs.append(load_todos(cat))
+                    current_indices.append(0)
+                    current_tab = len(tabs) - 1
         elif key == 23:  # Ctrl+W
             if len(tabs) > 1:
+                add_deleted_category(tab_categories[current_tab])
+                delete_todos_by_category(tab_categories[current_tab])
+                tab_categories.pop(current_tab)
                 tabs.pop(current_tab)
                 current_indices.pop(current_tab)
                 if current_tab >= len(tabs):
@@ -244,6 +302,8 @@ def main(stdscr):
             if 0 <= idx < len(todos):
                 todos[idx]['done'] = not todos[idx]['done']
                 update_todo_done(todos[idx]['id'], todos[idx]['done'])
+                # Atualiza a lista da aba
+                tabs[current_tab] = load_todos(tab_categories[current_tab])
         elif key == ord('a'):
             curses.echo()
             prompt = "Nova tarefa: "
@@ -256,8 +316,8 @@ def main(stdscr):
             stdscr.refresh()
             text = stdscr.getstr(box_y + box_h - 2, box_x + 2 + len(prompt), box_w - 4 - len(prompt)).decode()
             if text.strip():
-                add_todo(text)
-                tabs[current_tab] = load_todos()
+                add_todo(text, tab_categories[current_tab])
+                tabs[current_tab] = load_todos(tab_categories[current_tab])
                 current_indices[current_tab] = len(tabs[current_tab]) - 1
             curses.noecho()
         elif key == ord('d') and tabs[current_tab]:
@@ -265,7 +325,7 @@ def main(stdscr):
             idx = current_indices[current_tab]
             if 0 <= idx < len(todos):
                 delete_todo(todos[idx]['id'])
-                tabs[current_tab] = load_todos()
+                tabs[current_tab] = load_todos(tab_categories[current_tab])
                 # Ajusta o índice para não ultrapassar o tamanho da lista
                 if current_indices[current_tab] >= len(tabs[current_tab]):
                     current_indices[current_tab] = max(0, len(tabs[current_tab]) - 1)
