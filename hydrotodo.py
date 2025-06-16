@@ -2,7 +2,7 @@ import curses
 import sqlite3
 import os
 
-# HydroToDo Beta
+# HydroToDo Stable
 # Caracteres para borda arredondada
 TL = '╭'
 TR = '╮'
@@ -125,10 +125,11 @@ def main(stdscr):
     curses.curs_set(0)
     stdscr.clear()
     curses.start_color()
-    curses.init_pair(1, curses.COLOR_BLACK, curses.COLOR_CYAN)
-    curses.init_pair(2, curses.COLOR_YELLOW, curses.COLOR_BLACK)
-    curses.init_pair(3, curses.COLOR_GREEN, curses.COLOR_BLACK)
-    curses.init_pair(4, curses.COLOR_MAGENTA, curses.COLOR_BLACK)
+    curses.use_default_colors()  # Habilita o uso das cores padrão do terminal
+    curses.init_pair(1, curses.COLOR_BLACK, -1)  # -1 significa usar a cor padrão do terminal
+    curses.init_pair(2, curses.COLOR_YELLOW, -1)
+    curses.init_pair(3, curses.COLOR_GREEN, -1)
+    curses.init_pair(4, curses.COLOR_MAGENTA, -1)
 
     init_db()
     # Estrutura para abas
